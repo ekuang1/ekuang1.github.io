@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="twitter:card" content="summary">
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="HTTPS with LetsEncrypt for Azure Functions" />
+  <meta name="twitter:description" content="Setting up HTTPS with a proper certificate for Azure Functions should be straightforward and easy, but it's not. In this post I walk through one aspect of it that tripped me up." />
+  <meta name="twitter:url" content="" />
+  <meta name="twitter:image" content="https://2.gravatar.com/avatar/cdf546b601bf29a7eb4ca777544d11cd?s=160" /><meta name="twitter:site" content="@haacked" />
+
+  <!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>HTTPS with LetsEncrypt for Azure Functions | You’ve Been Haacked</title>
+<meta name="generator" content="Jekyll v3.9.0" />
+<meta property="og:title" content="HTTPS with LetsEncrypt for Azure Functions" />
+<meta name="author" content="Phil Haack" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Setting up HTTPS with a proper certificate for Azure Functions should be straightforward and easy, but it’s not. In this post I walk through one aspect of it that tripped me up." />
+<meta property="og:description" content="Setting up HTTPS with a proper certificate for Azure Functions should be straightforward and easy, but it’s not. In this post I walk through one aspect of it that tripped me up." />
+<meta property="og:site_name" content="You’ve Been Haacked" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-04-14T00:00:00-05:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="HTTPS with LetsEncrypt for Azure Functions" />
+<script type="application/ld+json">
+{"author":{"@type":"Person","name":"Phil Haack"},"@type":"BlogPosting","description":"Setting up HTTPS with a proper certificate for Azure Functions should be straightforward and easy, but it’s not. In this post I walk through one aspect of it that tripped me up.","url":"/archive/2021/04/14/https-for-azure-functions/","headline":"HTTPS with LetsEncrypt for Azure Functions","dateModified":"2021-04-14T00:00:00-05:00","datePublished":"2021-04-14T00:00:00-05:00","mainEntityOfPage":{"@type":"WebPage","@id":"/archive/2021/04/14/https-for-azure-functions/"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+  <link rel="stylesheet" href="/assets/css/main.css">
+  <link type="application/atom+xml" rel="alternate" href="/atom.xml" title="You've Been Haacked" />
+  
+  <script src="/assets/js/utils.js"></script>
+  <script src="/assets/js/slash.js" async></script>
+  
+	<script src="/assets/js/md5.min.js" async></script>
+  <script src="/assets/js/comment-box.js" async></script>
+  
+  <link href="https://fonts.googleapis.com/css?family=Mate|Open+Sans|Open+Sans+Condensed:300" rel="stylesheet">
+</head>
+
+  <body>
+    <header class="header" class="inner"><div class="site-header">
+  <div class="profilepic">
+    
+    <img src="https://2.gravatar.com/avatar/cdf546b601bf29a7eb4ca777544d11cd?s=160" alt="Profile Picture" />
+    
+  </div>
+
+  
+  <a class="site-title" rel="author" href="/">You&#39;ve Been Haacked</a>
+  
+  <div class="site-subtitle">…and you like it</div>
+  
+  
+  
+    <nav class="site-nav">
+      <ul>
+          
+          
+          
+          
+          <li><a class="page-link" href="/about/">About</a></li>
+          
+        
+          
+          
+          
+          <li><a class="page-link" href="/archives/">Archives</a></li>
+          
+        
+          
+          
+          
+          <li><a class="page-link" href="/contributors/">Contributors</a></li>
+          
+        
+        
+        <li><a class="page-link" href="https://github.com/Haacked/feedback/issues/new">Contact</a></li>
+        
+      </ul>
+    </nav>
+  
+  <div class="social-footer">
+    <ul class="social-media-list">
+  
+  
+  
+  <li><a href="https://github.com/haacked"><svg class="svg-icon"><use xlink:href="/assets/svg/minima-social-icons.svg#github"></use></svg> <span class="username">haacked</span></a></li>
+  
+  
+  
+  <li><a href="https://twitter.com/haacked"><svg class="svg-icon"><use xlink:href="/assets/svg/minima-social-icons.svg#twitter"></use></svg> <span class="username">haacked</span></a></li>
+  
+  
+  <li><a href="http://feeds.haacked.com/haacked"><svg class="svg-icon"><use xlink:href="/assets/svg/minima-social-icons.svg#rss"></use></svg> <span>rss</span></a></li>
+</ul>
+
+
+<!--  viewBox="0 1 16 14" -->
+  </div>
+</div>
+</header>
+    <main class="page-content" aria-label="Content">
+      <div class="wrapper">
+        <article class="post h-entry" itemscope itemtype="http://schema.org/BlogPosting">
+
+  <header class="post-header">
+    <h1 class="post-title p-name" itemprop="name headline">HTTPS with LetsEncrypt for Azure Functions</h1>
+    <div class="meta">
+  <time class="date dt-published" datetime="2021-04-14T00:00:00-05:00" itemprop="datePublished">
+    
+    Apr 14, 2021
+  </time>
+  <span class="tags">
+
+  <a href="/tags/#azure">azure</a> 
+
+  <a href="/tags/#security">security</a> 
+
+</span>
+  
+    
+  
+
+
+  
+  <span class="edit">
+
+
+
+<a href="https://github.com/haacked/haacked.com/edit/gh-pages/_posts/2021/2021-04-14-https-for-azure-functions.markdown">suggest edit</a>
+</span>
+</div>
+
+  </header>
+
+  <div class="post-content e-content" itemprop="articleBody">
+    <p><em>UPDATE: there might be an easier way now. <a href="https://azure.microsoft.com/en-us/updates/public-preview-app-service-managed-certificates-now-supports-apex-domains/">App Service Managed Certificates now supports apex domains</a>. I’ll give it a try and report back.</em></p>
+
+<p>My friends, in an ideal world, it would be dead simple to set up a certificate for an Azure App Service. For example, GitHub Pages gets this right.</p>
+
+<p><img src="https://user-images.githubusercontent.com/19977/114780771-b3776400-9d2c-11eb-91e0-6cd175428496.png" alt="Screen shot showing a checkbox for enforcing HTTPS" title="Could it be any easier?" /></p>
+
+<p>Look at that. A thing of beauty. Just click that checkbox and now your site is being served from HTTPS using a free certificate from LetsEncrypt. From an <em>apex domain</em> no less!</p>
+
+<p>But to set up a custom apex domain with HTTPS for an Azure App Service is not so easy. It takes about a hundred steps. That’s not that much of an exaggeration.</p>
+
+<p>For my site, I use the wonderful <a href="https://github.com/ohadschn/letsencrypt-webapp-renewer">ohadschn/letsencrypt-webapp-renewer</a> tool. Like I said, it takes some time to set up manually, but once you do, it works great.</p>
+
+<p>This post is not going to walk through that part. For that, I followed <a href="https://weblogs.asp.net/dixin/end-to-end-setup-free-ssl-certificate-to-secure-azure-web-app-with-https">this excellent guide by Dixin</a>. But be aware, the only constant is change and the Azure Portal embraces that credo. It’s changed a lot since this guide was written, so the screenshots may not match exactly what you need to do today, but you should be able to figure it out. Even if you follow the guide, it may be worth reading the README in the original repository.</p>
+
+<h2 id="azure-functions">Azure Functions</h2>
+
+<p>Now suppose you want to serve an Azure Function using HTTPS and a LetsEncrypt certificate. To clarify, I’m not talking about using an Azure Function to run <code class="language-plaintext highlighter-rouge">letsencrypt-webapp-renewer</code> on a schedule. In fact, if you search Azure Functions and <code class="language-plaintext highlighter-rouge">letsencrypt-webapp-renewer</code>, almost all the results are about that. No, I’m talking about being able to access your function via <code class="language-plaintext highlighter-rouge">https://your-custom-domain/api/your-function</code>.</p>
+
+<p>Since an Azure Function is an App Service under the hood, wouldn’t the instructions I mentioned earlier just work?</p>
+
+<p>You wish. No, Azure Functions are <em>SPECIAL!</em></p>
+
+<p>See, the problem is that LetsEncrypt needs to be able to verify that the domain is under your control. So it’s going to make a <code class="language-plaintext highlighter-rouge">GET</code> request to <code class="language-plaintext highlighter-rouge">http://your-custom-domain/.well-known/acme-challenge/{some-code}</code> and expect a certain response. By default, all requests to Azure Functions have the <code class="language-plaintext highlighter-rouge">/api</code> prefix. So we need to do a little magic to get this to work. We need to create a proxy!</p>
+
+<p>Fortunately, there’s <a href="https://github.com/sjkp/letsencrypt-siteextension/wiki/Azure-Functions-Support">a guide for that</a>. Unfortunately, it’s a bit outdated. Also, it doesn’t work if your function is controlled via source control. For example, my functions are in GitHub so the Azure Portal won’t let me create a proxy in the Azure Portal.</p>
+
+<p>And here is where I come to save the day. This is what I did to fix the situation.</p>
+
+<p>First, add a <code class="language-plaintext highlighter-rouge">proxies.json</code> file to your function directory. This is in the same place where your <code class="language-plaintext highlighter-rouge">hosts.json</code> file is located. In your project file, make sure this file is copied to the output directory. I forgot the first time I added this file and it filled me with regret as nothing worked.</p>
+
+<div class="language-xml highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nt">&lt;None</span> <span class="na">Update=</span><span class="s">"proxies.json"</span><span class="nt">&gt;</span>
+    <span class="nt">&lt;CopyToOutputDirectory&gt;</span>PreserveNewest<span class="nt">&lt;/CopyToOutputDirectory&gt;</span>
+<span class="nt">&lt;/None&gt;</span>
+</code></pre></div></div>
+
+<p>Your <code class="language-plaintext highlighter-rouge">proxies.json</code> file should look something like this:</p>
+
+<div class="language-json highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="p">{</span><span class="w">
+  </span><span class="nl">"$schema"</span><span class="p">:</span><span class="w"> </span><span class="s2">"http://json.schemastore.org/proxies"</span><span class="p">,</span><span class="w">
+  </span><span class="nl">"proxies"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+    </span><span class="nl">"letsencrypt-proxy"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+      </span><span class="nl">"matchCondition"</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w">
+        </span><span class="nl">"route"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/.well-known/acme-challenge/{*rest}"</span><span class="w">
+      </span><span class="p">},</span><span class="w">
+      </span><span class="nl">"backendUri"</span><span class="p">:</span><span class="w"> </span><span class="s2">"https://%WEBSITE_HOSTNAME%/api/letsencrypt/{rest}"</span><span class="w">
+    </span><span class="p">}</span><span class="w">
+  </span><span class="p">}</span><span class="w">
+</span><span class="p">}</span><span class="w">
+</span></code></pre></div></div>
+
+<p>This proxy will route requests to <code class="language-plaintext highlighter-rouge">https://your-custom-domain/.well-known/acme-challenge/{*rest}</code> to <code class="language-plaintext highlighter-rouge">https://your-custom-domain/api/letsencrypt/{rest}</code>.</p>
+
+<p>Now, you need to add a function class to handle that request.</p>
+
+<p>Here’s the code for mine, adapted from the guide I mentioned.</p>
+
+<div class="language-csharp highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">using</span> <span class="nn">System.IO</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">System.Net</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">System.Net.Http</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">System.Text</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">System.Threading.Tasks</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">Microsoft.AspNetCore.Http</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">Microsoft.Azure.WebJobs</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">Microsoft.Azure.WebJobs.Extensions.Http</span><span class="p">;</span>
+<span class="k">using</span> <span class="nn">Microsoft.Extensions.Logging</span><span class="p">;</span>
+
+<span class="k">namespace</span> <span class="nn">Serious.Abbot.Functions</span>
+<span class="p">{</span>
+    <span class="k">public</span> <span class="k">class</span> <span class="nc">AcmeChallengeFunction</span>
+    <span class="p">{</span>
+        <span class="p">[</span><span class="nf">FunctionName</span><span class="p">(</span><span class="s">"AcmeChallenge"</span><span class="p">)]</span>
+        <span class="k">public</span> <span class="k">async</span> <span class="n">Task</span><span class="p">&lt;</span><span class="n">HttpResponseMessage</span><span class="p">&gt;</span> <span class="nf">Run</span><span class="p">(</span>
+            <span class="p">[</span><span class="nf">HttpTrigger</span><span class="p">(</span><span class="n">AuthorizationLevel</span><span class="p">.</span><span class="n">Anonymous</span><span class="p">,</span> <span class="n">Route</span> <span class="p">=</span> <span class="s">"letsencrypt/{*rest}"</span><span class="p">)]</span>
+            <span class="n">HttpRequest</span> <span class="n">req</span><span class="p">,</span>
+            <span class="n">ILogger</span> <span class="n">log</span><span class="p">,</span>
+            <span class="kt">string</span> <span class="n">rest</span><span class="p">)</span>
+        <span class="p">{</span>
+            <span class="n">log</span><span class="p">.</span><span class="nf">LogInformation</span><span class="p">(</span><span class="s">$"Acme challenge requested with </span><span class="p">{</span><span class="n">req</span><span class="p">.</span><span class="n">Method</span><span class="p">}</span><span class="s">."</span><span class="p">);</span>
+            <span class="kt">var</span> <span class="n">content</span> <span class="p">=</span> <span class="k">await</span> <span class="n">File</span><span class="p">.</span><span class="nf">ReadAllTextAsync</span><span class="p">(</span><span class="s">$@"D:\home\site\wwwroot\.well-known\acme-challenge\</span><span class="p">{</span><span class="n">rest</span><span class="p">}</span><span class="s">"</span><span class="p">);</span>
+            <span class="kt">var</span> <span class="n">resp</span> <span class="p">=</span> <span class="k">new</span> <span class="nf">HttpResponseMessage</span><span class="p">(</span><span class="n">HttpStatusCode</span><span class="p">.</span><span class="n">OK</span><span class="p">)</span>
+            <span class="p">{</span>
+                <span class="n">Content</span> <span class="p">=</span> <span class="k">new</span> <span class="nf">StringContent</span><span class="p">(</span><span class="n">content</span><span class="p">,</span> <span class="n">Encoding</span><span class="p">.</span><span class="n">UTF8</span><span class="p">,</span> <span class="s">"text/plain"</span><span class="p">)</span>
+            <span class="p">};</span>
+            <span class="k">return</span> <span class="n">resp</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Commit that, deploy it, and try it out! Now, hopefully the next person that runs into this will find my blog post and not the hundreds of other irrelevant posts, and know what to do.</p>
+
+  </div>
+  <span class="edit">Found a typo or mistake in the post? 
+
+
+
+<a href="https://github.com/haacked/haacked.com/edit/gh-pages/_posts/2021/2021-04-14-https-for-azure-functions.markdown">suggest edit</a>
+</span>
+
+  
+    
+  
+
+
+
+
+
+
+<div id="comments" class="comments">
+  <h2>Comments</h2>
+  <form action="/fake" data-action="https://haacked-blog.azurewebsites.net/api/PostComment" method="post" class="comment-form form-horizontal comment-box">
+    <input name="redirect" type="hidden" value="/thanks">
+    <input name="post_id" type="hidden" value="https-for-azure-functions">
+    <input name="comment-site" type="hidden" value="">
+    <div class="comment-box">
+        <img src="/assets/img/unknown-avatar.png" data-fallbacksrc="/assets/img/unknown-avatar.png" data-role="user-avatar" alt="avatar" class="avatar" id="avatar-preview" />
+        <div class="commenttext">
+        <div class="comment-status status"></div>
+        <div contenteditable="true" tabindex="0" role="textbox" aria-multiline="true" data-role="editable" class="textarea plaintext" aria-label="Join the discussion..." id="comment-div" data-target="message"></div>
+        <input type="hidden" name="message" id="message" data-required="true" value="" />
+        </div>
+    </div>
+    <div class="comment-author">
+        <div class="control-group">
+        <input type="hidden" name="avatar" id="avatar-input" />
+        <input type="text" name="name" id="name" placeholder="Display Name" title="Name displayed with your comment" data-required="true" />
+        <input type="text" name="identity" id="identity" placeholder="email/@twitter/github" data-required="true" value="" />
+        <span class="info-circle" title="Identity is used to generate an avatar image only. It is cleared out when you click submit and not sent to the server."></span>
+        <button type="button" class="comment-button">Leave response</button>
+        <div class="remember-me">
+            <input type="checkbox" name="remember" id="remember"><label for="remember">Remember me</label>
+            <span class="info-circle" title="Stores your name and email in the browser so you don't have to fill out the form again. This does not set a cookie."></span>
+        </div>
+        </div>
+    </div>
+</form>
+
+  <h3 class="comment-count">3 responses</h3>
+  <ol class="comments-list">
+  
+  
+    
+    <li>
+      <!-- URL for comment on GitHub
+https://github.com/haacked/haacked.com/blob/gh-pages/_data/comments/https-for-azure-functions/62683628.yml
+-->
+
+
+<img alt="Avatar for Russ Painter" src="https://secure.gravatar.com/avatar/8f6aa0cc0f1d81a44e0b88916157e615?s=80&d=identicon&r=pg" class="avatar" height="48" width="48">
+
+
+<blockquote id="62683628">
+  <cite>
+    <span class="author">
+      
+        Russ Painter
+      
+    </span>
+    <span class="bullet">•</span>
+    <a href="#62683628" class="muted" title="Thu, 15 Apr 2021 01:37:48 -0500">
+      April
+      
+      15th,
+      
+      2021
+    </a>
+  </cite>
+  <div class="comment-body"><p>Thanks for this Phil. I have a few non-profit web apps which I’ve spent way too many hours getting wired up to lets-encrypt. I’d love to convert some of it to functions, but didn’t even want to touch it because of the https pain involved. You’re giving me hope.</p>
+</div>
+</blockquote>
+
+    </li>
+  
+    
+    <li>
+      <!-- URL for comment on GitHub
+https://github.com/haacked/haacked.com/blob/gh-pages/_data/comments/https-for-azure-functions/17804928.yml
+-->
+
+
+<img alt="Avatar for Tien" src="https://robohash.org/d41d8cd98f00b204e9800998ecf8427e" class="avatar" height="48" width="48">
+
+
+<blockquote id="17804928">
+  <cite>
+    <span class="author">
+      
+        Tien
+      
+    </span>
+    <span class="bullet">•</span>
+    <a href="#17804928" class="muted" title="Mon, 17 May 2021 03:25:29 -0500">
+      May
+      
+      17th,
+      
+      2021
+    </a>
+  </cite>
+  <div class="comment-body"><p>You saved my day. Just realize your site does not has https haha</p>
+</div>
+</blockquote>
+
+    </li>
+  
+    
+    <li>
+      <!-- URL for comment on GitHub
+https://github.com/haacked/haacked.com/blob/gh-pages/_data/comments/https-for-azure-functions/ac2acc25.yml
+-->
+
+
+<img alt="Avatar for Scooletz" src="https://unavatar.now.sh/twitter/scooletz/" class="avatar" height="48" width="48">
+
+
+<blockquote id="ac2acc25">
+  <cite>
+    <span class="author">
+      
+        Scooletz
+      
+    </span>
+    <span class="bullet">•</span>
+    <a href="#ac2acc25" class="muted" title="Mon, 02 Aug 2021 16:31:04 -0500">
+      August
+      
+      2nd,
+        
+      2021
+    </a>
+  </cite>
+  <div class="comment-body"><p>Nowadays I use a lot of mixture of static web sites + some functionalities provided by Azure Functions. One of the easiest to setup that I found are Cloudflare Workers which can do both, https and a bit of compute (serverless). Then, for real active parts I use Azure Functions. This mixture proved itself several times. Have you ever tried this blend?</p>
+
+</div>
+</blockquote>
+
+    </li>
+  
+  </ol>
+</div>
+
+
+  
+
+  <a class="u-url" href="/archive/2021/04/14/https-for-azure-functions/" hidden></a>
+</article>
+
+      </div>
+      <footer class="site-footer h-card">
+  <div class="wrapper">
+    <div class="footer-col-wrapper">
+      <div class="footer-col footer-col-1">
+        <ul class="contact-list">
+          <li class="p-name">
+            
+              Phil Haack
+            
+            </li>
+            
+        </ul>
+      </div>
+
+      <div class="footer-col footer-col-2">
+        <ul class="social-media-list">
+  
+  
+  
+  <li><a href="https://github.com/haacked"><svg class="svg-icon"><use xlink:href="/assets/svg/minima-social-icons.svg#github"></use></svg> <span class="username">haacked</span></a></li>
+  
+  
+  
+  <li><a href="https://twitter.com/haacked"><svg class="svg-icon"><use xlink:href="/assets/svg/minima-social-icons.svg#twitter"></use></svg> <span class="username">haacked</span></a></li>
+  
+  
+  <li><a href="http://feeds.haacked.com/haacked"><svg class="svg-icon"><use xlink:href="/assets/svg/minima-social-icons.svg#rss"></use></svg> <span>rss</span></a></li>
+</ul>
+
+
+<!--  viewBox="0 1 16 14" -->
+      </div>
+
+      <div class="footer-col footer-col-3">
+        <p>You&#39;ve been Haacked is a blog about Technology, Software, Management, and Open Source. It&#39;s full of good stuff.
+</p>
+      </div>
+    </div>
+
+  </div>
+
+</footer>
+
+    </main>
+  </body>
+</html>

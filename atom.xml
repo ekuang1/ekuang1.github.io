@@ -1,0 +1,336 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.9.0">Jekyll</generator><link href="/atom.xml" rel="self" type="application/atom+xml" /><link href="/" rel="alternate" type="text/html" /><updated>2021-08-27T12:42:38-05:00</updated><id>/atom.xml</id><title type="html">You’ve Been Haacked</title><subtitle>You've been Haacked is a blog about Technology, Software, Management, and Open Source. It's full of good stuff.
+</subtitle><author><name>Phil Haack</name></author><entry><title type="html">HTTPS with LetsEncrypt for Azure Functions</title><link href="/archive/2021/04/14/https-for-azure-functions/" rel="alternate" type="text/html" title="HTTPS with LetsEncrypt for Azure Functions" /><published>2021-04-14T00:00:00-05:00</published><updated>2021-04-14T00:00:00-05:00</updated><id>/archive/2021/04/14/https-for-azure-functions</id><content type="html" xml:base="/archive/2021/04/14/https-for-azure-functions/">&lt;p&gt;&lt;em&gt;UPDATE: there might be an easier way now. &lt;a href=&quot;https://azure.microsoft.com/en-us/updates/public-preview-app-service-managed-certificates-now-supports-apex-domains/&quot;&gt;App Service Managed Certificates now supports apex domains&lt;/a&gt;. I’ll give it a try and report back.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;My friends, in an ideal world, it would be dead simple to set up a certificate for an Azure App Service. For example, GitHub Pages gets this right.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/114780771-b3776400-9d2c-11eb-91e0-6cd175428496.png&quot; alt=&quot;Screen shot showing a checkbox for enforcing HTTPS&quot; title=&quot;Could it be any easier?&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Look at that. A thing of beauty. Just click that checkbox and now your site is being served from HTTPS using a free certificate from LetsEncrypt. From an &lt;em&gt;apex domain&lt;/em&gt; no less!&lt;/p&gt;
+
+&lt;p&gt;But to set up a custom apex domain with HTTPS for an Azure App Service is not so easy. It takes about a hundred steps. That’s not that much of an exaggeration.&lt;/p&gt;
+
+&lt;p&gt;For my site, I use the wonderful &lt;a href=&quot;https://github.com/ohadschn/letsencrypt-webapp-renewer&quot;&gt;ohadschn/letsencrypt-webapp-renewer&lt;/a&gt; tool. Like I said, it takes some time to set up manually, but once you do, it works great.&lt;/p&gt;
+
+&lt;p&gt;This post is not going to walk through that part. For that, I followed &lt;a href=&quot;https://weblogs.asp.net/dixin/end-to-end-setup-free-ssl-certificate-to-secure-azure-web-app-with-https&quot;&gt;this excellent guide by Dixin&lt;/a&gt;. But be aware, the only constant is change and the Azure Portal embraces that credo. It’s changed a lot since this guide was written, so the screenshots may not match exactly what you need to do today, but you should be able to figure it out. Even if you follow the guide, it may be worth reading the README in the original repository.&lt;/p&gt;
+
+&lt;h2 id=&quot;azure-functions&quot;&gt;Azure Functions&lt;/h2&gt;
+
+&lt;p&gt;Now suppose you want to serve an Azure Function using HTTPS and a LetsEncrypt certificate. To clarify, I’m not talking about using an Azure Function to run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;letsencrypt-webapp-renewer&lt;/code&gt; on a schedule. In fact, if you search Azure Functions and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;letsencrypt-webapp-renewer&lt;/code&gt;, almost all the results are about that. No, I’m talking about being able to access your function via &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;https://your-custom-domain/api/your-function&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Since an Azure Function is an App Service under the hood, wouldn’t the instructions I mentioned earlier just work?&lt;/p&gt;
+
+&lt;p&gt;You wish. No, Azure Functions are &lt;em&gt;SPECIAL!&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;See, the problem is that LetsEncrypt needs to be able to verify that the domain is under your control. So it’s going to make a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GET&lt;/code&gt; request to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;http://your-custom-domain/.well-known/acme-challenge/{some-code}&lt;/code&gt; and expect a certain response. By default, all requests to Azure Functions have the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;/api&lt;/code&gt; prefix. So we need to do a little magic to get this to work. We need to create a proxy!&lt;/p&gt;
+
+&lt;p&gt;Fortunately, there’s &lt;a href=&quot;https://github.com/sjkp/letsencrypt-siteextension/wiki/Azure-Functions-Support&quot;&gt;a guide for that&lt;/a&gt;. Unfortunately, it’s a bit outdated. Also, it doesn’t work if your function is controlled via source control. For example, my functions are in GitHub so the Azure Portal won’t let me create a proxy in the Azure Portal.&lt;/p&gt;
+
+&lt;p&gt;And here is where I come to save the day. This is what I did to fix the situation.&lt;/p&gt;
+
+&lt;p&gt;First, add a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;proxies.json&lt;/code&gt; file to your function directory. This is in the same place where your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;hosts.json&lt;/code&gt; file is located. In your project file, make sure this file is copied to the output directory. I forgot the first time I added this file and it filled me with regret as nothing worked.&lt;/p&gt;
+
+&lt;div class=&quot;language-xml highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nt&quot;&gt;&amp;lt;None&lt;/span&gt; &lt;span class=&quot;na&quot;&gt;Update=&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;proxies.json&quot;&lt;/span&gt;&lt;span class=&quot;nt&quot;&gt;&amp;gt;&lt;/span&gt;
+    &lt;span class=&quot;nt&quot;&gt;&amp;lt;CopyToOutputDirectory&amp;gt;&lt;/span&gt;PreserveNewest&lt;span class=&quot;nt&quot;&gt;&amp;lt;/CopyToOutputDirectory&amp;gt;&lt;/span&gt;
+&lt;span class=&quot;nt&quot;&gt;&amp;lt;/None&amp;gt;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;proxies.json&lt;/code&gt; file should look something like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-json highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;$schema&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;http://json.schemastore.org/proxies&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;proxies&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;letsencrypt-proxy&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+      &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;matchCondition&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+        &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;route&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;/.well-known/acme-challenge/{*rest}&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+      &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;},&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+      &lt;/span&gt;&lt;span class=&quot;nl&quot;&gt;&quot;backendUri&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;w&quot;&gt; &lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&quot;https://%WEBSITE_HOSTNAME%/api/letsencrypt/{rest}&quot;&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+    &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+  &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;w&quot;&gt;
+&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This proxy will route requests to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;https://your-custom-domain/.well-known/acme-challenge/{*rest}&lt;/code&gt; to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;https://your-custom-domain/api/letsencrypt/{rest}&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Now, you need to add a function class to handle that request.&lt;/p&gt;
+
+&lt;p&gt;Here’s the code for mine, adapted from the guide I mentioned.&lt;/p&gt;
+
+&lt;div class=&quot;language-csharp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;System.IO&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;System.Net&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;System.Net.Http&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;System.Text&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;System.Threading.Tasks&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;Microsoft.AspNetCore.Http&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;Microsoft.Azure.WebJobs&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;Microsoft.Azure.WebJobs.Extensions.Http&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;using&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;Microsoft.Extensions.Logging&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+&lt;span class=&quot;k&quot;&gt;namespace&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;Serious.Abbot.Functions&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;AcmeChallengeFunction&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;FunctionName&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;AcmeChallenge&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)]&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;public&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;async&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Task&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;HttpResponseMessage&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;Run&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;
+            &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;HttpTrigger&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;AuthorizationLevel&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Anonymous&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Route&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;letsencrypt/{*rest}&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)]&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;HttpRequest&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;req&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;ILogger&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;log&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+            &lt;span class=&quot;kt&quot;&gt;string&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;rest&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;log&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;LogInformation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;$&quot;Acme challenge requested with &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;req&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Method&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;.&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;kt&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;content&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;await&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;File&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;ReadAllTextAsync&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;$@&quot;D:\home\site\wwwroot\.well-known\acme-challenge\&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;rest&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;kt&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;resp&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;HttpResponseMessage&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;HttpStatusCode&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;OK&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+            &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;Content&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;new&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;StringContent&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;content&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Encoding&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;UTF8&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;text/plain&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+            &lt;span class=&quot;p&quot;&gt;};&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;resp&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Commit that, deploy it, and try it out! Now, hopefully the next person that runs into this will find my blog post and not the hundreds of other irrelevant posts, and know what to do.&lt;/p&gt;</content><author><name>Phil Haack</name></author><category term="azure" /><category term="security" /><summary type="html">UPDATE: there might be an easier way now. App Service Managed Certificates now supports apex domains. I’ll give it a try and report back.</summary></entry><entry><title type="html">Subscribing to cloud events with Abbot</title><link href="/archive/2021/03/04/abbot-cloud-events/" rel="alternate" type="text/html" title="Subscribing to cloud events with Abbot" /><published>2021-03-04T00:00:00-06:00</published><updated>2021-03-04T00:00:00-06:00</updated><id>/archive/2021/03/04/abbot-cloud-events</id><content type="html" xml:base="/archive/2021/03/04/abbot-cloud-events/">&lt;p&gt;In &lt;a href=&quot;https://haacked.com/archive/2021/02/19/writing-abbot-skill-in-csharp/&quot;&gt;my last post&lt;/a&gt;, I wrote about writing a sparkly skill in Abbot. That was fun! But Abbot isn’t &lt;em&gt;only&lt;/em&gt; about fun. After all, our company name is &lt;a href=&quot;https://aseriousbusiness.com/&quot;&gt;A Serious Business, Inc.&lt;/a&gt; Seriously, that’s the name. So it’s about time I show you how to get to some serious business with Abbot.&lt;/p&gt;
+
+&lt;p&gt;Here’s the scenario: We have a &lt;a href=&quot;https://martinfowler.com/bliki/BlueGreenDeployment.html&quot;&gt;Blue Green deployment&lt;/a&gt; set up for the &lt;a href=&quot;https://martinfowler.com/bliki/BlueGreenDeployment.html&quot;&gt;Abbot website&lt;/a&gt;. In Azure parlance, we use &lt;a href=&quot;https://docs.microsoft.com/en-us/azure/app-service/deploy-staging-slots&quot;&gt;Deployment Slots&lt;/a&gt; to set this up. This allows us to deploy to stage, and have an automatic cutover to production if everything is fine. But this process can seem opaque in action. It’d be nice to receive a notification when a deployment to stage is complete and the swap is starting. That’s where the new Abbot &lt;a href=&quot;https://ab.bot/packages/aseriousbiz/cloud-event&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cloud-event&lt;/code&gt;&lt;/a&gt; skill comes in handy.&lt;/p&gt;
+
+&lt;p&gt;I &lt;a href=&quot;https://www.youtube.com/watch?v=nMKZFzVGutY&quot;&gt;recorded a video&lt;/a&gt; so you can watch to see it in action. But I’ll write about it here too.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://www.youtube.com/watch?v=nMKZFzVGutY&quot;&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/110027163-7f009900-7ce6-11eb-8aba-5b1d96ef0b6d.png&quot; alt=&quot;YouTube video of the cloud-event skill in action&quot; /&gt;&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cloud-event&lt;/code&gt; skill supports the &lt;a href=&quot;https://github.com/cloudevents/spec/blob/v1.0.1/http-webhook.md&quot;&gt;Cloud Events Web Hooks for Event Delivery&lt;/a&gt; specification. That means it can support any cloud provider that implements the spec, which I assume is most of them.&lt;/p&gt;
+
+&lt;p&gt;In our case, we use &lt;a href=&quot;https://docs.microsoft.com/en-us/azure/event-grid/overview&quot;&gt;Azure Event Grid&lt;/a&gt; to subscribe to events happening in our cloud infrastructure. Here’s how it works.&lt;/p&gt;
+
+&lt;h2 id=&quot;create-azure-event-grid-subscription&quot;&gt;Create Azure Event Grid Subscription&lt;/h2&gt;
+
+&lt;p&gt;In the &lt;a href=&quot;https://portal.azure.com/&quot;&gt;Azure Portal&lt;/a&gt; search up “Event Grid Subscriptions” and click on that to get to the event grid subscriptions page. Note, this page is pre-filtered which can be confusing (I let the team know and they promise to make this UI better).&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/110028278-e539eb80-7ce7-11eb-9e71-17c45702bfda.png&quot; alt=&quot;Event Grid Subscriptions&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;From here click the plus sign next to “Event Subscription” to create a new subscription.&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;For the “Event Schema” choose “Cloud Event Schema 1.0”.&lt;/li&gt;
+  &lt;li&gt;For the “Topic Types” choose “App Services.”&lt;/li&gt;
+  &lt;li&gt;For “Endpoint Type” choose “Web Hook”&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;At this point, it should look something like this. Now we just need a web hook URL. This is where Abbot comes in!&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/110028281-e5d28200-7ce7-11eb-8037-e1d64d6a0483.png&quot; alt=&quot;Screen Shot 2021-03-04 at 12 46 59 PM&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;At this point, I assume you have an Abbot account set up and connected to a chat room. If not, go to &lt;a href=&quot;https://ab.bot/&quot;&gt;https://ab.bot/&lt;/a&gt; and click “Log In” and use your Slack or Discord login to log in. Follow the instructions to get it set up.&lt;/p&gt;
+
+&lt;p&gt;Next, we need to install the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cloud-event&lt;/code&gt; package. On the &lt;a href=&quot;https://ab.bot/packages/aseriousbiz/cloud-event&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cloud-event&lt;/code&gt;&lt;/a&gt; package page, click the “Install Package” button. It’ll give you a chance to review the code before it actually installs it. Click “Create skill from package” and now you have the skill enabled!&lt;/p&gt;
+
+&lt;p&gt;Go to a chat room with Abbot. In our case, we have an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;#ops&lt;/code&gt; room for this sort of notification. Then run the following in chat:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@abbot attach cloud-event
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;What that does is create an HTTP trigger for the skill attached to the room where you ran it. An HTTP trigger is a secret URL that can be used to call the skill. And the skill will respond to the room it’s attached to.&lt;/p&gt;
+
+&lt;p&gt;When you run the command, Abbot will respond with something like:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The skill &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;cloud-event&lt;/code&gt; is now attached to the channel &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ops&lt;/code&gt;. Visit https://ab.bot/skills/cloud-event/triggers to get the secret URL used to call this skill.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Grab that URL, and go back to the Event Grid Subscription page, and click “Select an endpoint” and supply the trigger URL as the web hook endpoint. Click “Create” and you’re done! You can trigger a deploy to see it in action. Or just change an App Setting to get an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;AppUpdated&lt;/code&gt; notification. If you run into any problems, you can see a log of the last 100 HTTP requests that the skill received.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@abbot cloud-event log
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And you can inspect more details such as the HTTP headers and the request body by specifying which log entry to look at:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@abbot cloud-event log 42
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This is a powerful example of the value of Abbot in a chat ops workflow. If you’re interested in learning more about Abbot, check out &lt;a href=&quot;https://haacked.com/archive/2021/02/11/introducing-abbot/&quot;&gt;my introduction to Abbot&lt;/a&gt;, &lt;a href=&quot;https://dotnetrocks.com/?show=1726&quot;&gt;my .NET Rocks episode on Abbot&lt;/a&gt;, or just peruse the &lt;a href=&quot;https://ab.bot/&quot;&gt;Abbot website&lt;/a&gt;. And when you watch the video, don’t forget to smash that like button!&lt;/p&gt;</content><author><name>Phil Haack</name></author><category term="abbot" /><category term="chatops" /><category term="csharp" /><summary type="html">In my last post, I wrote about writing a sparkly skill in Abbot. That was fun! But Abbot isn’t only about fun. After all, our company name is A Serious Business, Inc. Seriously, that’s the name. So it’s about time I show you how to get to some serious business with Abbot.</summary></entry><entry><title type="html">Writing Sparkly Abbot Skills With C#</title><link href="/archive/2021/02/19/writing-abbot-skill-in-csharp/" rel="alternate" type="text/html" title="Writing Sparkly Abbot Skills With C#" /><published>2021-02-19T00:00:00-06:00</published><updated>2021-02-19T00:00:00-06:00</updated><id>/archive/2021/02/19/writing-abbot-skill-in-csharp</id><content type="html" xml:base="/archive/2021/02/19/writing-abbot-skill-in-csharp/">&lt;p&gt;In my last post, I wrote about some of the interesting elements of C# we take advantage of to make &lt;a href=&quot;https://haacked.com/archive/2021/02/12/argument-parsing-with-abbot/&quot;&gt;argument parsing in Abbot with C# nice&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;In this post, I put it all together &lt;a href=&quot;https://www.youtube.com/watch?v=WaTkNraTGU8&quot;&gt;in a YouTube video&lt;/a&gt; that walks through writing a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;sparkle&lt;/code&gt; skill. This skill lets you give your friends and colleagues :sparkles:. It can track who gave the sparkle and how many sparkles a person received along with the reason for the sparkle. It’s basically a kudos skill, but more sparkly!&lt;/p&gt;
+
+&lt;iframe width=&quot;560&quot; height=&quot;315&quot; src=&quot;https://www.youtube.com/embed/WaTkNraTGU8&quot; frameborder=&quot;0&quot; allow=&quot;accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture&quot; allowfullscreen=&quot;&quot;&gt;&lt;/iframe&gt;
+
+&lt;p&gt;Hope you enjoy the video and let me know if there’s anything else you’d like to learn about or see with regards to Abbot.&lt;/p&gt;</content><author><name>Phil Haack</name></author><category term="abbot" /><category term="chatops" /><category term="csharp" /><summary type="html">In my last post, I wrote about some of the interesting elements of C# we take advantage of to make argument parsing in Abbot with C# nice.</summary></entry><entry><title type="html">Argument parsing with Abbot</title><link href="/archive/2021/02/12/argument-parsing-with-abbot/" rel="alternate" type="text/html" title="Argument parsing with Abbot" /><published>2021-02-12T00:00:00-06:00</published><updated>2021-02-12T00:00:00-06:00</updated><id>/archive/2021/02/12/argument-parsing-with-abbot</id><content type="html" xml:base="/archive/2021/02/12/argument-parsing-with-abbot/">&lt;p&gt;Most Bot skills strive for a more natural language feel to arguments passed them. For example, to remember something with Abbot you can use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot rem haacked's blog is https://haacked.com&lt;/code&gt;. And then later recall it with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot rem haacked's blog&lt;/code&gt;. Or just &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot rem haacked&lt;/code&gt; because Abbot uses fuzzy matching.&lt;/p&gt;
+
+&lt;p&gt;Abbot doesn’t strive for true natural language processing yet because many skills need precision in calling them and natural language interfaces can be stressful to use as you figure out the right way to call them. This may change in the future and it’s an area we hope to explore.&lt;/p&gt;
+
+&lt;p&gt;To achieve a more natural language feel, Bot skills tend to have a pretty simple format for the arguments passed to the skill. But even a simple format can require a fairly complex regular expression to parse correctly. And we all know what happens when you decide to &lt;a href=&quot;http://regex.info/blog/2006-09-15/247&quot;&gt;use a regular expression to solve a problem&lt;/a&gt;. Spending a day writing regular expressions can make you feel like you’ve been slugged.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/107692389-92799080-6c61-11eb-9710-c75811b528ee.jpg&quot; alt=&quot;Image of woman slugging a man - Simplified Pixabay License&quot; title=&quot;The feeling I get when I parse arguments with a regular expression&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Let’s follow an example to see what I mean. Suppose we have a skill for managing another user’s favorite songs with the following usage pattern.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@abbot fave {@mention} add {song} [description]
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This skill allows the user to add a favorite song for another user with an optional description.&lt;/p&gt;
+
+&lt;p&gt;The regular expression to parse this seems relatively straightforward at first. Note that the arguments always omit the skill name so the arguments in this case would be the part after &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;fave&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Here’s my regex so far: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;^(?&amp;lt;mention&amp;gt;.*?)\s+(?&amp;lt;cmd&amp;gt;.*?)\s+(?&amp;lt;song&amp;gt;.*?)(\s+(?&amp;lt;description&amp;gt;.*))?$&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;The following set of chat transcripts show how the skill might be used.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@haack: @abbot fave @paul add Dynamite
+@abbot: I've added `Dynamite` to @paul's list of favorite songs.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So far so good. Now it gets a bit trickier if we want to add a favorite song with a description.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@haack: @abbot fave @paul add Chandelier Because Sia speaks to me
+@abbot: I've added `Chandelier` with the description `Because Sia speaks to me` to @paul's list of favorite songs
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Which part is the song and which part is the description? Since descriptions tend to be sentences, it might make sense to have the first word after the command be the title, and the rest be the description. Until you run into the following example:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@haack: @abbot fave @paul add Baby Shark Makes me dance
+@abbot: I've added `Baby` with the description `Shark Makes me dance` to @paul's list of favorite songs
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In this case, “Baby Shark” is the song. So what we need to do is allow quoting an argument.&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;@haack: @abbot fave @paul add &quot;Baby Shark&quot; Makes me dance
+@abbot: I've added `Baby Shark` with the description `Makes me dance` to @paul's list of favorite songs.
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Ah! That’s better.&lt;/p&gt;
+
+&lt;p&gt;To get this better behavior, we need to update the regular expression we’ve been using to something a bit more complicated: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;^(?&amp;lt;mention&amp;gt;.*?)\s(?&amp;lt;cmd&amp;gt;.*?)\s(?:\&quot;(?&amp;lt;song&amp;gt;.*?)\&quot;|(?&amp;lt;song&amp;gt;.*?))(\s(?&amp;lt;description&amp;gt;.*))?$&lt;/code&gt;. That’s not terrible, but as we handle more and more conditions, it gets more and more complicated.&lt;/p&gt;
+
+&lt;p&gt;Fortunately, Abbot handles this sort of argument parsing for you. If you write a C# skill, you have access to the arguments via the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Arguments&lt;/code&gt; property. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Arguments&lt;/code&gt; is a custom collection with some interesting properties to make argument handling easier. It contains a tokenized set of incoming arguments that already handles quoting and whitespace.&lt;/p&gt;
+
+&lt;p&gt;So in the case of the argument &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@paul add &quot;Baby Shark&quot; Makes me dance&lt;/code&gt; (the skill name is always omitted from the arguments), &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Arguments&lt;/code&gt; would contain the collection:&lt;/p&gt;
+
+&lt;div class=&quot;language-csharp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;m&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;@paul&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;m&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]:&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;add&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;m&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Baby&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Shark&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;m&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Makes&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;m&quot;&gt;4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;me&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;m&quot;&gt;5&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]:&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;dance&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;“Now wait a minute,” you say. “Don’t we want the &lt;em&gt;description&lt;/em&gt;, the &lt;em&gt;fourth&lt;/em&gt; argument, to have the rest of the words after the song.” Right you are!&lt;/p&gt;
+
+&lt;p&gt;But in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Arguments&lt;/code&gt; collection, the fourth element in the collection is “Makes” and not the full description. This is a problem.&lt;/p&gt;
+
+&lt;p&gt;Not to worry, Abbot has a solution for this. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Arguments&lt;/code&gt; implements &lt;a href=&quot;https://docs.microsoft.com/en-us/dotnet/csharp/deconstruct&quot;&gt;tuple deconstruction&lt;/a&gt; in a special way. Suppose you know that you will have at most four arguments for a skill. You can deconstruct the arguments into a tuple like so.&lt;/p&gt;
+
+&lt;div class=&quot;language-csharp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cmdArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mentionArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;songArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;descriptionArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Bot&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Arguments&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If there are more than four arguments, the remaining arguments are captured in the last tuple parameter, in this case &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;descriptionArg&lt;/code&gt;. If you’re familiar with JavaScript, this is a lot like &lt;a href=&quot;https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Functions/rest_parameters&quot;&gt;rest parameters&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Even though the remaining arguments are captured in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;descriptionArg&lt;/code&gt; (which is what we want in this case), you can still cast &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;descriptionArg&lt;/code&gt; to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IArguments&lt;/code&gt; to access each token that made up the description, if you needed to for some reason.&lt;/p&gt;
+
+&lt;p&gt;If there are less than four arguments, then the last argument will be of type &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IMissingArgument&lt;/code&gt;. So let’s put this all together.&lt;/p&gt;
+
+&lt;div class=&quot;language-csharp highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cmdArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mentionArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;songArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;descriptionArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Bot&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Arguments&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+&lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;cmdArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Value&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;add&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(!(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mentionArg&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IMentionArgument&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mention&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;))&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;await&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Bot&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;ReplyAsync&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Please mention someone whose favorite song this is.&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;songArg&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IMissingArgument&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;await&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Bot&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;ReplyAsync&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Please mention someone whose favorite song this is.&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;// Some magic here to save the favorite song...&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;response&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;descriptionArg&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;IMissingArgument&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;?&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;$&quot;I've added `&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;songArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Value&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;` to &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mention&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Mentioned&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;'s list of favorite songs.&quot;&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;$&quot;I've added `&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;songArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Value&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;` with the description `&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;descriptionArg&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Value&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;` to &lt;/span&gt;&lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;mention&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Mentioned&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;'s list of favorite songs.&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;await&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Bot&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;ReplyAsync&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;response&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The rest of the code is left as an exercise for the reader.&lt;/p&gt;
+
+&lt;p&gt;A few things to note. At the moment, we only support deconstructing up to a four-tuple. We can easily add a five-tuple or six-tuple in the future. But in most cases, four is enough. And if it’s not, you can still deconstruct that fourth argument by casting it to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IArguments&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;There are helpful extension methods on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IArgument&lt;/code&gt; (the base interface for all arguments). For example, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ToLocalTime&lt;/code&gt; attempts to parse the argument as a local time (such as “2pm”) and return a &lt;a href=&quot;https://nodatime.org/2.2.x/api/NodaTime.LocalTime.html&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;LocalTime&lt;/code&gt;&lt;/a&gt; if it succeeds. Otherwise it returns null. We’ll add more of these helpers as we go along. Let us know what else we should add by emailing &lt;a href=&quot;mailto:feedback@aseriousbusiness.com&quot;&gt;feedback@aseriousbusinees.com&lt;/a&gt; or use the Abbot &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;feedback&lt;/code&gt; skill.&lt;/p&gt;
+
+&lt;p&gt;If an argument is a mention, you can cast it to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;IMentionArgument&lt;/code&gt; to access information about the mentioned user. Mentions are also in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Mentions&lt;/code&gt; collection.&lt;/p&gt;
+
+&lt;p&gt;Also, if the default argument parsing doesn’t work for you, you can always access the full arguments with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Bot.Arguments.Value&lt;/code&gt;. Python and JavaScript skills also receive the arguments as a collection in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bot.tokenized_arguments&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;bot.tokenizedArguments&lt;/code&gt; respectively. They don’t have the same deconstructors that the C# code does, but mainly because those languages already have similar list operations.&lt;/p&gt;
+
+&lt;p&gt;If you’re interested in seeing the code for our argument parsing, check out &lt;a href=&quot;https://gist.github.com/haacked/adbdc12fc6c8ea21d639deb3763fdd98&quot;&gt;this gist&lt;/a&gt;. It’s in a gist for now because I wanted a quick way to share it. We need to organize our code so it’s easier to share the parts we want to share as open source libraries. The parsing code is fairly simple right now, but we hope to expand it. It doesn’t support argument flags and such because the usage pattern for bot skills tend to be different than what you’d use with a command line tool. However, we may consider using an open source full-fledged command line parser in the future if there’s demand for it.&lt;/p&gt;
+
+&lt;p&gt;For more about writing skills for Abbot, check out the &lt;a href=&quot;https://ab.bot/help/guides/&quot;&gt;Getting Started Guides&lt;/a&gt;.&lt;/p&gt;</content><author><name>Phil Haack</name></author><category term="abbot" /><category term="chatops" /><category term="csharp" /><summary type="html">Most Bot skills strive for a more natural language feel to arguments passed them. For example, to remember something with Abbot you can use @abbot rem haacked's blog is https://haacked.com. And then later recall it with @abbot rem haacked's blog. Or just @abbot rem haacked because Abbot uses fuzzy matching.</summary></entry><entry><title type="html">Introducing Abbot, a powerful ChatOps tool for collaborative work</title><link href="/archive/2021/02/11/introducing-abbot/" rel="alternate" type="text/html" title="Introducing Abbot, a powerful ChatOps tool for collaborative work" /><published>2021-02-11T00:00:00-06:00</published><updated>2021-02-11T00:00:00-06:00</updated><id>/archive/2021/02/11/introducing-abbot</id><content type="html" xml:base="/archive/2021/02/11/introducing-abbot/">&lt;p&gt;Collaborative work is difficult enough when located together in an office. It can &lt;a href=&quot;https://haacked.com/archive/2020/03/03/how-to-work-from-home/&quot;&gt;present new challenges when working remotely&lt;/a&gt;. When I worked at GitHub, one powerful tool we used that left a lasting impact on me was ChatOps. In fact, GitHub may have created the concept. If not, they were certainly one of the first.&lt;/p&gt;
+
+&lt;p&gt;For those unfamiliar with the term, ChatOps is a portmanteau of &lt;em&gt;Chat&lt;/em&gt; and &lt;em&gt;Operations&lt;/em&gt;. That might conjure the idea of operations through posting memes and emojis in chat, and while that’s not too far from the truth, it’s not the whole picture.&lt;/p&gt;
+
+&lt;p&gt;ChatOps is a collaborative way of working together within chat that is connected to all your other tools and systems through a central automation tool, the bot. The bot responds to chat commands and dispatches them to handle tasks and report back into the room. It can deploy the website, coordinate a time for a meeting through multiple time zones, or even display a random image of a pug.&lt;/p&gt;
+
+&lt;p&gt;At GitHub, the bot we used for ChatOps was called &lt;a href=&quot;https://hubot.github.com/&quot;&gt;Hubot&lt;/a&gt;.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;GitHub, Inc., wrote the first version of Hubot to automate our company chat room. Hubot knew how to deploy the site, automate a lot of tasks, and be a source of fun around the office.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;The power of this approach lies in the two things. First, repeatable processes and tasks can be automated through the chat bot to reduce errors and help people get more done. Second, the visibility of running commands in chat is a powerful collaboration and teaching tool.&lt;/p&gt;
+
+&lt;p&gt;Suppose your site goes down and you start to investigate. If you investigate by running commands in a terminal on your own system, nobody else can see what you’re doing in order to help or learn. If instead you run commands in chat to bring up graphs and logs in the chat room, anyone else watching that room can follow along and collaborate. They also collectively learn how to troubleshoot issues. As does anyone in the future who happens to browse or search the chat logs. The chat room becomes your organization’s shared command line.&lt;/p&gt;
+
+&lt;p&gt;Not only that, it’s a place to support your colleagues. When GitHub was &lt;a href=&quot;https://www.wired.com/story/github-ddos-memcached/&quot;&gt;hit by the largest DDOS attack ever&lt;/a&gt;, many of us who were not involved in defending the attack still followed along in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;#ops&lt;/code&gt; room (knowing not to get in the way of course). We were able to both watch the impressive troubleshooting and mitigation display by the ops team. I learned a lot about DDOS and networking etc. Not only that, we were able to offer support in other ways as people worked around the clock to keep the site up.&lt;/p&gt;
+
+&lt;h2 id=&quot;introducing-abbot&quot;&gt;Introducing Abbot&lt;/h2&gt;
+
+&lt;p&gt;Hubot is fantastic. However, it can be tedious to set up and keep running. And it doesn’t offer much in the way of managing a Hubot via a website, nor audit logs. That’s why my &lt;a href=&quot;http://pmn.org/&quot;&gt;my co-founder, Paul Nakata&lt;/a&gt; and I formed &lt;a href=&quot;https://www.aseriousbusiness.com/&quot;&gt;&lt;em&gt;A Serious Business, Inc.&lt;/em&gt;&lt;/a&gt; (Yes, that’s the real company name) to take what we liked about Hubot and try to improve on it with &lt;a href=&quot;https://ab.bot/&quot;&gt;Abbot&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Abbot is a hosted chat bot that you can install with a couple of clicks. Like Hubot, it lives in your chat room and responds to commands like a champ. Abbot can be a lot of fun, but it can also do a lot of heavy lifting for you and your colleagues.&lt;/p&gt;
+
+&lt;p&gt;If you’re curious to try it out, head on over to &lt;a href=&quot;https://ab.bot/&quot;&gt;https://ab.bot/&lt;/a&gt; and click &lt;a href=&quot;https://ab.bot/login&quot;&gt;TRY FOR FREE&lt;/a&gt;. We’re in Beta right now and it’s free to try out. Just authenticate with your Slack or Discord account to create an Abbot account. Then follow the instructions to install it into your chat platform. Also, be sure to check out the &lt;a href=&quot;https://dotnetrocks.com/?show=1726&quot;&gt;lastest episode of .NET Rocks&lt;/a&gt; where I talk about Abbot and ChatOps.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/107439587-26731d00-6ae7-11eb-925c-0f50f09f2969.png&quot; alt=&quot;Image of Abbot, a robot, against a purple background&quot; title=&quot;I am ready to do the thing.&quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;what-can-abbot-do&quot;&gt;What can Abbot do?&lt;/h2&gt;
+
+&lt;p&gt;Abbot ships with a few simple built-in skills. Some of them may feel familiar if you’ve used Hubot such as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;rem&lt;/code&gt; for remembering things and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;who&lt;/code&gt; for building the story of a person.&lt;/p&gt;
+
+&lt;p&gt;The real power lies in writing custom skills and sharing them. Abbot supports writing skills in the browser (using &lt;a href=&quot;https://codemirror.net/&quot;&gt;CodeMirror&lt;/a&gt;) with C#, JavaScript, and Python with as little ceremony and boilerplate as possible. With C#, you get IntelliSense powered by Roslyn and &lt;a href=&quot;https://github.com/ashmind/mirrorsharp&quot;&gt;MirrorSharp&lt;/a&gt;. The editing experience also includes a console to test your skill and to run it if chat is down.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/107440160-0859ec80-6ae8-11eb-9873-31e682850be3.png&quot; alt=&quot;Editing a skill in C#&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;We hope to support many more languages in the future. To learn how to write a skill, check out our &lt;a href=&quot;https://ab.bot/help/guides/&quot;&gt;Getting Started Guide&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;try-out-a-skill-package&quot;&gt;Try out a skill package!&lt;/h2&gt;
+
+&lt;p&gt;You can also browse and install skills written by others! Just visit the &lt;a href=&quot;https://ab.bot/packages&quot;&gt;Abbot Package Manager&lt;/a&gt; to see what’s available.&lt;/p&gt;
+
+&lt;p&gt;For example, the &lt;a href=&quot;https://ab.bot/packages/aseriousbiz/tz&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;tz&lt;/code&gt; skill&lt;/a&gt; is based on a Hubot script written by &lt;a href=&quot;https://github.com/niik&quot;&gt;Markus Olsson&lt;/a&gt; and reports a specified time in the time zones of all the mentioned people:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;https://user-images.githubusercontent.com/19977/107439487-fdeb2300-6ae6-11eb-8d4a-80a1e514794d.png&quot; alt=&quot;Example of the TZ skill in use. It shows 2pm for America/Grand_Turk in 3 different time zones.&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;This skill makes use of the time zone as reported by Slack. Discord doesn’t provide this information, so you can tell Abbot your timezone via the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;my&lt;/code&gt; skill, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot my timezone is America/Los_Angeles&lt;/code&gt;, or by telling Abbot your location, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot my location is 98008&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Another useful package is the &lt;a href=&quot;https://ab.bot/packages/aseriousbiz/deploy&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;deploy&lt;/code&gt; skill&lt;/a&gt;. It’s based on &lt;a href=&quot;https://github.com/stephenyeargin/hubot-github-deployments&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;hubot-github-deployments&lt;/code&gt;&lt;/a&gt; and lets you manage deployments via the &lt;a href=&quot;https://docs.github.com/en/rest/reference/repos#deployments&quot;&gt;GitHub Deployments API&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;custom-lists&quot;&gt;Custom Lists&lt;/h2&gt;
+
+&lt;p&gt;When I was at GitHub, probably the most common skill that people would write would simply post a random image or text from a pre-configured list of items. For example, my colleague wrote a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;haack&lt;/code&gt; skill that would post a &lt;a href=&quot;https://haacked.com/archive/2016/04/28/thank-you/&quot;&gt;random animated gif of me&lt;/a&gt;. I wrote one that returned a random &lt;a href=&quot;https://www.pinterest.com/chrissymfrey/deep-thoughts-snl/&quot;&gt;Deep Thought by Jack Handy&lt;/a&gt;. These were so much fun that we included them as a first-class feature, no code necessary. You can use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;custom-list&lt;/code&gt; skill to create custom lists and then add items to them. When you install Abbot, it comes pre-installed with a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;joke&lt;/code&gt; list. Try &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot joke&lt;/code&gt; to learn about Abbot’s sense of humor.&lt;/p&gt;
+
+&lt;h2 id=&quot;skill-triggers&quot;&gt;Skill Triggers&lt;/h2&gt;
+
+&lt;p&gt;One powerful feature of Abbot is the ability to trigger a skill on a schedule or via an HTTP request. The HTTP trigger is particularly useful for getting information from third party systems into chat. For example, we have a skill that receives Azure Event Grid notifications and post them into a Slack room. This alerts us when our deployment swap occurs from staging to production.&lt;/p&gt;
+
+&lt;h2 id=&quot;why-abbot&quot;&gt;Why Abbot?&lt;/h2&gt;
+
+&lt;p&gt;As you might guess, Abbot is a play on A Bot. It has nothing to do with abs. We built Abbot because we enjoy pain and figured we could take care of all the hard work and tedious details of hosting a bot so you don’t have to. For example, skills you write work across every chat platform we support without any additional work on your part. Likewise, any skill packages you install work across multiple chat platforms. We take care of the nitty gritty details of each platform. At the moment, we only support Slack and Discord, but the sky’s the limit. As we add more chat platforms based on interest, your skills work across all of them. If your organization moves from Slack to Discord, all your skills continue to work!&lt;/p&gt;
+
+&lt;p&gt;We already get a lot of benefit from Abbot. We’ve found Abbot to be a fast way to experiment with an idea. It’s a lot of work to build and host a full Slack or Discord integration. With Abbot, you can have your idea running in a few minutes.&lt;/p&gt;
+
+&lt;h2 id=&quot;whats-the-stack&quot;&gt;What’s the Stack?&lt;/h2&gt;
+
+&lt;p&gt;When evaluating a product, the stack isn’t really that important. It’s more important that the product solves a need for you and does it well. Having said that, if you’re a long time reader of my blog, you’re probably a developer interested in the behind the scenes details. I plan to write more about the development in the future. For now I’ll give the highlights.&lt;/p&gt;
+
+&lt;p&gt;The main website is an ASP.NET Core site written in C#. It’s mostly Razor Pages, a few controllers, and a bit of JavaScript. We’re not using any JS frameworks as our needs are simple and I’m a fan of using web components. We do &lt;a href=&quot;http://bulma.io/&quot;&gt;use Bulma&lt;/a&gt; for our CSS framework as that was the preferred choice of the designer (and also a former colleague at GitHub) we worked with. For the database we use Azure PostgreSql along with EF Core for data access.&lt;/p&gt;
+
+&lt;p&gt;Abbot uses Azure Functions to run skill code, one for each language. This is why the languages we started with are C#, JavaScript, and Python as those are the languages supported by Azure Functions. For the editor, we use CodeMirror as mentioned earlier. We use MirrorSharp for the C# editor to give us IntelliSense.&lt;/p&gt;
+
+&lt;p&gt;To integrate with Slack we use the &lt;a href=&quot;https://dev.botframework.com/&quot;&gt;Microsoft Bot Framework&lt;/a&gt; hosted with &lt;a href=&quot;https://azure.microsoft.com/en-us/services/bot-services/&quot;&gt;Azure Bot Service&lt;/a&gt;. Unfortunately they don’t support Discord so we had to write our own Discord to DirectLine relay. We hope to open source this if there’s interest.&lt;/p&gt;
+
+&lt;h2 id=&quot;try-it-out&quot;&gt;Try it out!&lt;/h2&gt;
+
+&lt;p&gt;If this sounds interesting to you, please give it a try at https://ab.bot/. We could really use some feedback. You can email your feedback to &lt;a href=&quot;mailto:feedback@aseriousbusiness.com&quot;&gt;feedback@aseriousbusinees.com&lt;/a&gt;. Or, send us feedback right from chat using Abbot: &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;@abbot feedback {Write Your Feedback Here}&lt;/code&gt;. That’ll go right into our inbox. Please use responsibly.&lt;/p&gt;</content><author><name>Phil Haack</name></author><category term="abbot" /><category term="chatops" /><category term="remote work" /><summary type="html">Collaborative work is difficult enough when located together in an office. It can present new challenges when working remotely. When I worked at GitHub, one powerful tool we used that left a lasting impact on me was ChatOps. In fact, GitHub may have created the concept. If not, they were certainly one of the first.</summary></entry></feed>
