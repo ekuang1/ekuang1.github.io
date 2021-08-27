@@ -2,7 +2,7 @@
 title: "Introducing Abbot, a powerful ChatOps tool for collaborative work"
 description: "Introducing Abbot, your friendly neighborhood chat bot. It's the best way to automate tasks from chat to work together with others."
 tags: [abbot,chatops,remote work]
-excerpt_image: https://user-images.githubusercontent.com/19977/107439587-26731d00-6ae7-11eb-925c-0f50f09f2969.png
+excerpt_image: https://raw.githubusercontent.com/ekuang1/ekuang1.github.io/master/assets/images/AIMLogo.jpg
 ---
 
 Collaborative work is difficult enough when located together in an office. It can [present new challenges when working remotely](https://haacked.com/archive/2020/03/03/how-to-work-from-home/). When I worked at GitHub, one powerful tool we used that left a lasting impact on me was ChatOps. In fact, GitHub may have created the concept. If not, they were certainly one of the first.
